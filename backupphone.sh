@@ -10,7 +10,16 @@ ZSUFFIX=gz
 
 
 dos2unix() {
-	sed 's/\r$//'
+	sed -u 's/\r$//'
+}
+
+dos2unixsafesize() {
+	size=$1
+	bs=512
+	count=1024
+	for ((o=0; o+bs*count<size; o+=bs*count)); do
+		dd bs=$bs count=$count 2>/dev/null | dos2unix
+	done
 }
 
 progresscat() {
@@ -83,9 +92,11 @@ data2tarpiece()
 		read blocksout
 		(( $blocksout == $BLOCKS )) || {
 			cat "$TMP" 1>&2
+			rm $TMP
 			return $blocksout
 		}
 	}	
+	rm $TMP
 }
 
 tarfolder()
@@ -157,6 +168,7 @@ fi
 		fi
 		{ progresscat "partial.$TARFILE" | $ZBIN -d 2>&3 | tee /dev/stderr | wc -c > $TMP; } 2>&1
 		size=$(<$TMP)
+		rm $TMP
 		transferred=$((size - resumeOffset))
 		remaining=$((resumeSize - transferred));
 	fi
@@ -177,7 +189,7 @@ fi
 		PHONEF=/dev/block/$resumeFile
 		echo adb shell "dd if=$PHONEF bs=512 skip=$((transferred/512)) count=$(size2blocks $remaining) 2>/dev/null" 1>&2
 		adb shell "dd if=$PHONEF bs=512 skip=$((transferred/512)) count=$(size2blocks $remaining) 2>/dev/null" |
-			dos2unix |
+			dos2unixsafesize $remaining |
 			pv -etabps "$(( remaining + (transferred%512) ))" |
 			dd iflag=fullblock conv=sync bs=512 count=$(size2blocks $remaining) |
 			tail -c +$((transferred % 512))
@@ -193,16 +205,20 @@ fi
 			rm $TMP
 			exit 1
 		fi
+		rm $TMP
 		echo "Transferring $size bytes in $(size2blocks $size) blocks..." 1>&2
 		
 		adb shell "dd if=$PHONEF bs=512 count=$(size2blocks $size) 2>/dev/null" |
-			dos2unix | pv -etabps "$size" |
-			data2tarpiece "$TAG/$F" 444 0 0 $size $(adb shell date +%s | dos2unix) ||
-		exit $?
-	done || exit $?
-	tartail
-} | $ZBIN > "$TARFILE" || exit $?
-rm $TMP 2>/dev/null
-echo "$TARFILE created, verify ..."
-adb reboot
-tar -atvf "$TARFILE"
+			dos2unixsafesize $size | pv -etabps "$size" |
+			data2tarpiece "$TAG/$F" 444 0 0 $size $(adb shell date +%s | dos2unix) || { touch $TMP; exit $?; }
+	done
+	if ! [ -e $TMP ]; then tartail; fi
+} | $ZBIN > "$TARFILE"
+if [ -e $TMP ]; then 
+	rm $TMP
+	echo FAIL
+else
+	echo "$TARFILE created, verify ..."
+	adb reboot
+	tar -atvf "$TARFILE"
+fi
