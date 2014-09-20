@@ -7,20 +7,10 @@ exec 3>&2
 ZBIN=gzip
 ZSUFFIX=gz
 
-
-
-dos2unix() {
-	sed -u 's/\r$//'
-}
-
-dos2unixsafesize() {
-	size=$1
-	bs=512
-	count=1024
-	for ((o=0; o+bs*count<size; o+=bs*count)); do
-		dd bs=$bs count=$count 2>/dev/null | dos2unix
-	done
-}
+DOS2UNIX=$(
+	type -p dos2unix >/dev/null && echo dos2unix ||
+	{ [ -e /tmp/dos2unix ] || gcc dos2unix.c -o /tmp/dos2unix; echo /tmp/dos2unix; }
+)
 
 progresscat() {
 	cat "$1" | pv -etabps "$(stat -c %s "$1")" 2>&3
@@ -36,6 +26,7 @@ tarheaderraw()
 	mtime=$6
 	type=$7
 	sum=$8
+	#echo "Tar header $name $mode $uid $gid $size $mtime $type $sum" 1>&2
 	{
 		printf "%-100s" $name |tr ' ' '\0'
 		printf "%7s\0" $mode |tr ' ' 0
@@ -111,7 +102,7 @@ tartail()
 
 phone2stdout()
 {
-	adb shell "cat $@" | dos2unix
+	adb shell "cat $@" | $DOS2UNIX
 }
 
 # tar partitions and block together
@@ -185,14 +176,24 @@ fi
 	done
 
 	if [ "x$RESUME" != "x" ]; then
-		echo "Continuing $resumeFile at $transferred ..." 1>&2
+		echo "Continuing $resumeFile at $transferred for $remaining ..." 1>&2
 		PHONEF=/dev/block/$resumeFile
 		echo adb shell "dd if=$PHONEF bs=512 skip=$((transferred/512)) count=$(size2blocks $remaining) 2>/dev/null" 1>&2
 		adb shell "dd if=$PHONEF bs=512 skip=$((transferred/512)) count=$(size2blocks $remaining) 2>/dev/null" |
-			dos2unixsafesize $remaining |
+			$DOS2UNIX |
 			pv -etabps "$(( remaining + (transferred%512) ))" |
-			dd iflag=fullblock conv=sync bs=512 count=$(size2blocks $remaining) |
+			dd iflag=fullblock conv=sync bs=512 count=$(size2blocks $remaining) 2>"$TMP" |
 			tail -c +$((transferred % 512))
+		sed 's/+.*//' "$TMP" | {
+			read blocksin
+			read blocksout
+			[ "0" != "x$((blocksout))" ] && (( $blocksout == $(size2blocks $remaining) )) || {
+				cat "$TMP" 1>&2
+				rm $TMP
+				exit $blocksout
+			}
+		}
+		rm $TMP
 	fi
 
 	for F in $FILES; do
@@ -209,8 +210,8 @@ fi
 		echo "Transferring $size bytes in $(size2blocks $size) blocks..." 1>&2
 		
 		adb shell "dd if=$PHONEF bs=512 count=$(size2blocks $size) 2>/dev/null" |
-			dos2unixsafesize $size | pv -etabps "$size" |
-			data2tarpiece "$TAG/$F" 444 0 0 $size $(adb shell date +%s | dos2unix) || { touch $TMP; exit $?; }
+			$DOS2UNIX | pv -etabps "$size" |
+			data2tarpiece "$TAG/$F" 444 0 0 $size $(adb shell date +%s | $DOS2UNIX) || { touch $TMP; exit $?; }
 	done
 	if ! [ -e $TMP ]; then tartail; fi
 } | $ZBIN > "$TARFILE"
