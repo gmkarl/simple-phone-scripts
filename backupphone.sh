@@ -196,7 +196,7 @@ fi
 		echo adb shell "dd if=$PHONEF bs=512 skip=$((transferred/512)) count=$(size2blocks $remaining) 2>/dev/null" 1>&2
 		phone2stdout "$PHONEF" "$remaining" "$transferred" |
 			pv -etabps "$(( remaining + (transferred%512) ))" -N "$resumeFile" |
-			dd iflag=fullblock conv=sync bs=512 count=$(size2blocks $remaining) 2>"$TMP" |
+			dd iflag=fullblock conv=sync bs=512 count=$(size2blocks $remaining) status=noxfer 2>"$TMP" |
 			tail -c +$((transferred % 512))
 		sed 's/+.*//' "$TMP" | {
 			read blocksin
@@ -220,7 +220,7 @@ fi
 			exit 1
 		fi
 		rm $TMP
-		echo "Transferring $size bytes in $(size2blocks $size) blocks..." 1>&2
+		echo "$F: $size bytes in $(size2blocks $size) blocks..." 1>&2
 		
 		phone2stdout "$PHONEF" "$size" 0 |
 			pv -etabps "$size" -N "$F" |
