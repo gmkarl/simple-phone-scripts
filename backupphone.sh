@@ -6,11 +6,19 @@ exec 3>&2
 
 ZBIN=gzip
 ZSUFFIX=gz
+MODE=pull
+#MODE=shelldd
 
-DOS2UNIX=$(
-	type -p dos2unix >/dev/null && echo dos2unix ||
-	{ [ -e /tmp/dos2unix ] || gcc dos2unix.c -o /tmp/dos2unix; echo /tmp/dos2unix; }
-)
+if [[ "$MODE" == "shelldd" ]]; then
+	DOS2UNIX=$(
+		type -p dos2unix >/dev/null && echo dos2unix ||
+		{ [ -e /tmp/dos2unix ] || gcc dos2unix.c -o /tmp/dos2unix; echo /tmp/dos2unix; }
+	)
+else
+	DOS2UNIX() {
+		sed -u 's/\r$//'
+	}
+fi
 
 progresscat() {
 	cat "$1" | pv -etabps "$(stat -c %s "$1")" 2>&3
@@ -102,7 +110,15 @@ tartail()
 
 phone2stdout()
 {
-	adb shell "cat $@" | $DOS2UNIX
+	path=$1
+	count=$2
+	skip=$3
+	if [[ "$MODE" == "shelldd" ]]; then
+		adb shell "dd if=$path bs=512 skip=$((skip/512)) count=$(size2blocks $count) 2>/dev/null" | $DOS2UNIX
+	elif [[ "$MODE" == "pull" ]]; then
+		adb pull $path /dev/stdout |
+		dd bs=512 iflag=fullblock skip=$((skip/512)) count=$(size2blocks $count) 2>/dev/null
+	fi
 }
 
 # tar partitions and block together
@@ -179,9 +195,8 @@ fi
 		echo "Continuing $resumeFile at $transferred for $remaining ..." 1>&2
 		PHONEF=/dev/block/$resumeFile
 		echo adb shell "dd if=$PHONEF bs=512 skip=$((transferred/512)) count=$(size2blocks $remaining) 2>/dev/null" 1>&2
-		adb shell "dd if=$PHONEF bs=512 skip=$((transferred/512)) count=$(size2blocks $remaining) 2>/dev/null" |
-			$DOS2UNIX |
-			pv -etabps "$(( remaining + (transferred%512) ))" |
+		phone2stdout "$PHONEF" "$remaining" "$transferred" |
+			pv -etabps "$(( remaining + (transferred%512) ))" -N "$resumeFile" |
 			dd iflag=fullblock conv=sync bs=512 count=$(size2blocks $remaining) 2>"$TMP" |
 			tail -c +$((transferred % 512))
 		sed 's/+.*//' "$TMP" | {
@@ -209,8 +224,8 @@ fi
 		rm $TMP
 		echo "Transferring $size bytes in $(size2blocks $size) blocks..." 1>&2
 		
-		adb shell "dd if=$PHONEF bs=512 count=$(size2blocks $size) 2>/dev/null" |
-			$DOS2UNIX | pv -etabps "$size" |
+		phone2stdout "$PHONEF" "$size" 0 |
+			pv -etabps "$size" -N "$F" |
 			data2tarpiece "$TAG/$F" 444 0 0 $size $(adb shell date +%s | $DOS2UNIX) || { touch $TMP; exit $?; }
 	done
 	if ! [ -e $TMP ]; then tartail; fi
