@@ -119,6 +119,7 @@ phone2stdout()
 		adb pull $path /dev/stdout |
 		dd bs=512 iflag=fullblock skip=$((skip/512)) count=$(size2blocks $count) 2>/dev/null
 	fi
+	sleep 1
 }
 
 # tar partitions and block together
@@ -214,7 +215,6 @@ fi
 	for F in $FILES; do
 		PHONEF=/dev/block/$F
 
-		echo "$PHONEF -> $TAG/$F ..." 1>&2
 		size=$(adb shell "dd < $PHONEF > /dev/null" | tee $TMP | sed -ne 's/^\([0-9]*\) bytes.*/\1/p')
 		if ! (( size )); then
 			cat $TMP
