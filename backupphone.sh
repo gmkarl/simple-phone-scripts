@@ -15,9 +15,7 @@ if [[ "$MODE" == "shelldd" ]]; then
 		{ [ -e /tmp/dos2unix ] || gcc dos2unix.c -o /tmp/dos2unix; echo /tmp/dos2unix; }
 	)
 else
-	DOS2UNIX() {
-		sed -u 's/\r$//'
-	}
+	DOS2UNIX="sed -u 's/\r$//'"
 fi
 
 progresscat() {
