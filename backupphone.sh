@@ -56,6 +56,7 @@ tarheader()
 		while read byte; do
 			sum=$((sum+0x$byte))
 		done
+		echo "$1: $5 bytes in $(size2blocks $5) blocks (header sum=$sum)..." 1>&2
 		tarheaderraw "$@" $sum
 	}
 }
@@ -162,6 +163,10 @@ fi
 			rm "partial.$TARFILE"
 		fi
 		tarfolder "$TAG/" 555 0 0 0 $(date +%s)
+		adb shell getprop | $DOS2UNIX > ${TMP}.getprop
+		cat "${TMP}.getprop" |
+			data2tarpiece "$TAG/getprop" 444 0 0 $(stat -c %s ${TMP}.getprop) $(adb shell date +%s | $DOS2UNIX) || { touch $TMP; exit $?; }
+		rm ${TMP}.getprop
 	else
 		resumeFile=${RESUME##* }
 		resumeOffset=${RESUME% *}
@@ -220,7 +225,6 @@ fi
 			exit 1
 		fi
 		rm $TMP
-		echo "$F: $size bytes in $(size2blocks $size) blocks..." 1>&2
 		
 		phone2stdout "$PHONEF" "$size" 0 |
 			pv -etabps "$size" -N "$F" |
